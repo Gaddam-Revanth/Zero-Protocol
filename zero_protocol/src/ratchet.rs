@@ -1,5 +1,4 @@
 use hkdf::Hkdf;
-use hmac::{Hmac, Mac}; // Standard HMAC
 use sha2::Sha256;
 use thiserror::Error;
 
