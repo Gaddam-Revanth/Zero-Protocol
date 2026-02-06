@@ -2,7 +2,6 @@ use base64::{Engine as _, engine::general_purpose};
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::time::Duration;
 use zero_protocol::crypto;
 use zero_protocol::models::{Email, UserIdentity};
 use zero_protocol::storage::Storage;
@@ -159,7 +158,8 @@ async fn test_multi_user_simulation() {
         let sender = agents.choose(&mut rand::thread_rng()).unwrap();
 
         // Pick recipient != sender
-        let mut recipients: Vec<&Agent> = agents
+        // Pick recipient != sender
+        let recipients: Vec<&Agent> = agents
             .iter()
             .filter(|a| a.username != sender.username)
             .collect();
