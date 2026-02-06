@@ -114,8 +114,8 @@ impl JmapClient {
         for (method_name, data, _client_id) in response.method_responses {
             if method_name == "Email/get" {
                 if let Some(list) = data.get("list").and_then(|l| l.as_array()) {
-                    let mut emails = Vec::new();
-                    for item in list {
+                    let emails = Vec::new();
+                    for _item in list {
                         // TODO: Map JMAP Email object to our Email struct
                         // This requires mapping fields and handling encryption if body is encrypted blob
                         // For now, we return empty or attempt valid parsing
