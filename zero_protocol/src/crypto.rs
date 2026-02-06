@@ -1,20 +1,18 @@
-use aes::cipher::{self, BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::Pkcs7}; // Explicit imports + generic
+use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::Pkcs7}; // Explicit imports + generic
 use aes_gcm::{
-    Aes256Gcm, Nonce,
-    aead::{Aead, KeyInit, Payload},
+    Aes256Gcm,             // Removed Nonce if not used explicitly as type (used via into())
+    aead::{Aead, KeyInit}, // Removed Payload (unused)
 };
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use bip39::{Language, Mnemonic, MnemonicType, Seed};
-use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey}; // Added Signature
 use hkdf::Hkdf;
-use k256::{
-    EncodedPoint, PublicKey, SecretKey, ecdh::EphemeralSecret, elliptic_curve::sec1::ToEncodedPoint,
-};
+use k256::{PublicKey, SecretKey, ecdh::EphemeralSecret, elliptic_curve::sec1::ToEncodedPoint};
 use pbkdf2::pbkdf2_hmac;
-use rand::{Rng, RngCore};
+use rand::RngCore;
 use sha2::Sha256;
 use thiserror::Error;
 
@@ -33,10 +31,14 @@ pub enum CryptoError {
     PasswordHashError(String),
     #[error("Signature verification failed")]
     SignatureVerificationFailed,
+    #[error("Signing error: {0}")]
+    SigningError(String),
     #[error("Invalid mnemonic")]
     InvalidMnemonic,
     #[error("Invalid key")]
     InvalidKey,
+    #[error("Invalid signature")]
+    InvalidSignature,
 }
 
 /// Generates a new 12-word BIP39 mnemonic.
@@ -67,6 +69,36 @@ pub fn derive_signing_key(seed: &[u8]) -> SigningKey {
     SigningKey::from_bytes(&key_bytes)
 }
 
+/// Signs a message using Ed25519.
+pub fn sign_data(key: &SigningKey, data: &[u8]) -> Vec<u8> {
+    let signature = key.sign(data);
+    signature.to_vec()
+}
+
+/// Verifies a signature using Ed25519.
+pub fn verify_signature(
+    public_key_bytes: &[u8],
+    data: &[u8],
+    signature_bytes: &[u8],
+) -> Result<(), CryptoError> {
+    let public_key = VerifyingKey::from_bytes(
+        public_key_bytes
+            .try_into()
+            .map_err(|_| CryptoError::InvalidKey)?,
+    )
+    .map_err(|_| CryptoError::InvalidKey)?;
+
+    let signature = Signature::from_bytes(
+        signature_bytes
+            .try_into()
+            .map_err(|_| CryptoError::InvalidSignature)?,
+    );
+
+    public_key
+        .verify(data, &signature)
+        .map_err(|_| CryptoError::SignatureVerificationFailed)
+}
+
 /// AES-256-CBC Encryption
 pub fn encrypt_aes_256_cbc(data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoError> {
     if key.len() != 32 {
@@ -75,8 +107,20 @@ pub fn encrypt_aes_256_cbc(data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoErr
     let mut iv = [0u8; 16];
     OsRng.fill_bytes(&mut iv);
 
-    let mut encryptor = Aes256CbcEnc::new(key.into(), &iv.into());
-    let ciphertext = encryptor.encrypt_padded_vec_mut::<Pkcs7>(data);
+    let encryptor = Aes256CbcEnc::new(key.into(), &iv.into());
+
+    // Manual buffer management for padding
+    let len = data.len();
+    let block_size = 16;
+    // Calculate required size: length + padding. Pkcs7 adds 1 to block_size bytes.
+    // Worst case: len + block_size.
+    let buffer_len = len + block_size;
+    let mut buffer = vec![0u8; buffer_len];
+    buffer[..len].copy_from_slice(data);
+
+    let ciphertext = encryptor
+        .encrypt_padded_mut::<Pkcs7>(&mut buffer, len)
+        .map_err(|_| CryptoError::EncryptionError)?;
 
     let mut result = Vec::with_capacity(iv.len() + ciphertext.len());
     result.extend_from_slice(&iv);
@@ -90,11 +134,16 @@ pub fn decrypt_aes_256_cbc(encrypted_data: &[u8], key: &[u8]) -> Result<Vec<u8>,
         return Err(CryptoError::DecryptionError);
     }
     let (iv, ciphertext) = encrypted_data.split_at(16);
-    let mut decryptor = Aes256CbcDec::new(key.into(), iv.into());
+    let decryptor = Aes256CbcDec::new(key.into(), iv.into());
 
-    decryptor
-        .decrypt_padded_vec_mut::<Pkcs7>(ciphertext)
-        .map_err(|_| CryptoError::DecryptionError)
+    // Decrypt in-place requires a buffer.
+    let mut buffer = ciphertext.to_vec();
+
+    let plaintext = decryptor
+        .decrypt_padded_mut::<Pkcs7>(&mut buffer)
+        .map_err(|_| CryptoError::DecryptionError)?;
+
+    Ok(plaintext.to_vec())
 }
 
 pub fn hash_password(password: &str) -> Result<String, CryptoError> {

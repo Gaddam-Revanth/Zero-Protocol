@@ -1,5 +1,5 @@
 use crate::crypto;
-use crate::models::{Contact, Email, UserIdentity};
+use crate::models::{Email, UserIdentity};
 use rusqlite::{Connection, Result, params};
 use thiserror::Error;
 
