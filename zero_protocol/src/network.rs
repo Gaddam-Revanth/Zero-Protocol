@@ -193,4 +193,101 @@ impl JmapClient {
 
         Ok(())
     }
+
+    pub async fn query_inbox_ids(&self) -> Result<Vec<String>, NetworkError> {
+        let account_id = self.get_primary_account_id()?;
+        let api_url = self.get_api_url()?;
+
+        let request = JmapRequest {
+            using: vec![
+                "urn:ietf:params:jmap:core".to_string(),
+                "urn:ietf:params:jmap:mail".to_string(),
+            ],
+            method_calls: vec![(
+                "Email/query".to_string(),
+                serde_json::json!({
+                    "accountId": account_id,
+                    "filter": { "inMailbox": "inbox" }
+                }),
+                "0".to_string(),
+            )],
+        };
+
+        let response: JmapResponse = self
+            .client
+            .post(&api_url)
+            .bearer_auth(&self.auth_token)
+            .json(&request)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        for (method_name, data, _) in response.method_responses {
+            if method_name == "Email/query" {
+                if let Some(ids) = data.get("ids").and_then(|ids| ids.as_array()) {
+                    return Ok(ids
+                        .iter()
+                        .filter_map(|id| id.as_str().map(String::from))
+                        .collect());
+                }
+            }
+        }
+
+        Ok(Vec::new())
+    }
+
+    pub async fn delete_emails(&self, ids: Vec<String>) -> Result<(), NetworkError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let account_id = self.get_primary_account_id()?;
+        let api_url = self.get_api_url()?;
+
+        let request = JmapRequest {
+            using: vec![
+                "urn:ietf:params:jmap:core".to_string(),
+                "urn:ietf:params:jmap:mail".to_string(),
+            ],
+            method_calls: vec![(
+                "Email/set".to_string(),
+                serde_json::json!({
+                    "accountId": account_id,
+                    "destroy": ids
+                }),
+                "0".to_string(),
+            )],
+        };
+
+        let _response: JmapResponse = self
+            .client
+            .post(&api_url)
+            .bearer_auth(&self.auth_token)
+            .json(&request)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        Ok(())
+    }
+
+    /// Fetches all emails from the Inbox and immediately deletes them from the server.
+    /// This enforces the "100% Client-Side Storage" policy.
+    pub async fn fetch_and_delete_inbox(&self) -> Result<Vec<Email>, NetworkError> {
+        // 1. Query IDs
+        let ids = self.query_inbox_ids().await?;
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 2. Fetch Content
+        let emails = self.get_emails(ids.clone()).await?;
+
+        // 3. Delete from Server
+        self.delete_emails(ids).await?;
+
+        Ok(emails)
+    }
 }
