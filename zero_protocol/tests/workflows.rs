@@ -35,10 +35,12 @@ fn test_full_user_registration_flow() {
 fn test_end_to_end_email_encryption_flow() {
     // Scenario: Alice sends email to Bob
 
+    use base64::{Engine as _, engine::general_purpose};
+
     // 1. Setup Alice
     let alice_mnemonic = crypto::generate_mnemonic().unwrap();
     let alice_seed = crypto::derive_seed_from_mnemonic(&alice_mnemonic, "").unwrap();
-    let alice_key = crypto::derive_signing_key(&alice_seed); // (In real ECIES, needs diff key type, but using ed25519 seed for sim)
+    let _alice_key = crypto::derive_signing_key(&alice_seed); // Unused in this specific encryption flow
 
     // 2. Setup Bob
     let bob_mnemonic = crypto::generate_mnemonic().unwrap();
@@ -60,7 +62,7 @@ fn test_end_to_end_email_encryption_flow() {
         sender: "alice@zero.net".to_string(),
         recipients: vec!["bob@zero.net".to_string()],
         subject: "Secret Mission".to_string(),
-        body: base64::encode(&encrypted_body), // Store as base64 string
+        body: general_purpose::STANDARD.encode(&encrypted_body), // Store as base64 string
         timestamp: 2000,
         is_read: false,
         folder: "inbox".to_string(),
@@ -74,7 +76,9 @@ fn test_end_to_end_email_encryption_flow() {
     let received_msg = &bob_inbox[0];
 
     // 7. Bob decrypts
-    let encrypted_bytes = base64::decode(&received_msg.body).unwrap();
+    let encrypted_bytes = general_purpose::STANDARD
+        .decode(&received_msg.body)
+        .unwrap();
     let decrypted_body =
         crypto::decrypt_ecies(&bob_secret.to_bytes(), &encrypted_bytes).expect("Decryption failed");
 
