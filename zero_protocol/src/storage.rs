@@ -134,3 +134,52 @@ impl Storage {
         Ok(emails)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Email, UserIdentity};
+
+    #[test]
+    fn test_storage_user_operations() {
+        let storage = Storage::open(":memory:").unwrap();
+
+        let user = UserIdentity {
+            id: "user_123".to_string(),
+            public_key: "pub_key_hex".to_string(),
+            username: "testuser".to_string(),
+            created_at: 1234567890,
+        };
+
+        storage.save_user(&user).unwrap();
+
+        let fetched_user = storage.get_user().unwrap().unwrap();
+        assert_eq!(fetched_user.id, user.id);
+        assert_eq!(fetched_user.username, user.username);
+    }
+
+    #[test]
+    fn test_storage_email_operations() {
+        let storage = Storage::open(":memory:").unwrap();
+
+        let email = Email {
+            id: "msg_1".to_string(),
+            sender: "alice@example.com".to_string(),
+            recipients: vec!["bob@example.com".to_string()],
+            subject: "Super Secret".to_string(),
+            body: "EncryptedBodyBlob".to_string(),
+            timestamp: 100,
+            is_read: false,
+            folder: "inbox".to_string(),
+        };
+
+        storage.save_email(&email).unwrap();
+
+        let emails = storage.get_emails_by_folder("inbox").unwrap();
+        assert_eq!(emails.len(), 1);
+        assert_eq!(emails[0].id, email.id);
+
+        let emails_sent = storage.get_emails_by_folder("sent").unwrap();
+        assert_eq!(emails_sent.len(), 0);
+    }
+}

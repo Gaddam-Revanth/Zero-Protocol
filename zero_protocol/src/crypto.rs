@@ -231,3 +231,76 @@ pub fn decrypt_ecies(recipient_secret_bytes: &[u8], data: &[u8]) -> Result<Vec<u
 
     Ok(decrypted)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mnemonic_generation_and_seed_derivation() {
+        let mnemonic = generate_mnemonic().unwrap();
+        assert_eq!(mnemonic.split_whitespace().count(), 12);
+
+        let seed = derive_seed_from_mnemonic(&mnemonic, "").unwrap();
+        assert_eq!(seed.len(), 64); // BIP39 seed is 64 bytes (512 bits)
+    }
+
+    #[test]
+    fn test_signing_key_derivation() {
+        let seed = [0u8; 32];
+        let key = derive_signing_key(&seed);
+        // Just checking it runs without panic and returns a key
+        assert!(key.to_bytes().len() == 32);
+    }
+
+    #[test]
+    fn test_aes_encryption_decryption() {
+        let key = [42u8; 32]; // 32 bytes for AES-256
+        let data = b"Hello Zero Protocol!";
+
+        let encrypted = encrypt_aes_256_cbc(data, &key).unwrap();
+        assert_ne!(data.to_vec(), encrypted);
+
+        let decrypted = decrypt_aes_256_cbc(&encrypted, &key).unwrap();
+        assert_eq!(data.to_vec(), decrypted);
+    }
+
+    #[test]
+    fn test_password_hashing() {
+        let password = "super_secure_password";
+        let hash = hash_password(password).unwrap();
+
+        assert!(verify_password(password, &hash).unwrap());
+        assert!(!verify_password("wrong_password", &hash).unwrap());
+    }
+
+    #[test]
+    fn test_ecies_encryption_decryption() {
+        let recipient_secret = SecretKey::random(&mut OsRng);
+        let recipient_pub = recipient_secret.public_key();
+        let recipient_pub_bytes = recipient_pub.to_sec1_bytes(); // Compressed
+
+        let data = b"Secret Message for JMAP";
+
+        let encrypted = encrypt_ecies(&recipient_pub_bytes, data).unwrap();
+        assert_ne!(data.to_vec(), encrypted);
+
+        let decrypted = decrypt_ecies(&recipient_secret.to_bytes(), &encrypted).unwrap();
+        assert_eq!(data.to_vec(), decrypted);
+    }
+
+    #[test]
+    fn test_ed25519_signatures() {
+        let seed = [1u8; 32];
+        let signing_key = derive_signing_key(&seed);
+        let verifying_key = signing_key.verifying_key();
+
+        let data = b"Sign this important email";
+        let signature = sign_data(&signing_key, data);
+
+        assert!(verify_signature(verifying_key.as_bytes(), data, &signature).is_ok());
+
+        let modified_data = b"Tampered data";
+        assert!(verify_signature(verifying_key.as_bytes(), modified_data, &signature).is_err());
+    }
+}
