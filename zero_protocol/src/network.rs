@@ -143,10 +143,10 @@ impl JmapClient {
     }
 
     pub async fn send_email(&self, email: &Email) -> Result<(), NetworkError> {
-        // Implementation TODO
-        Ok(())
-    }
-}
+        let account_id = self.get_primary_account_id()?;
+        let api_url = self.get_api_url()?;
+
+        // Encryption Bridge (Placeholder)
         // In a real scenario, we would:
         // 1. Fetch recipient's public key (e.g. from Contacts or Directory).
         // 2. crypto::encrypt_ecies(&recipient_key, email.body.as_bytes())
@@ -181,7 +181,8 @@ impl JmapClient {
             )],
         };
 
-        let _response: JmapResponse = self.client
+        let _response: JmapResponse = self
+            .client
             .post(&api_url)
             .bearer_auth(&self.auth_token)
             .json(&request)
@@ -192,5 +193,4 @@ impl JmapClient {
 
         Ok(())
     }
-}
 }
