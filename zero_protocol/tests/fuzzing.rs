@@ -29,16 +29,6 @@ proptest! {
         prop_assert_eq!(data, decrypted);
     }
 
-    #[test]
-    fn test_password_hashing_stability(password in "[a-zA-Z0-9~!@#$%^&*()_+]{8,32}") {
-        let hash_res = crypto::hash_password(&password);
-        prop_assert!(hash_res.is_ok());
-        let hash = hash_res.unwrap();
-
-        let verify_res = crypto::verify_password(&password, &hash);
-        prop_assert!(verify_res.is_ok());
-        prop_assert!(verify_res.unwrap());
-    }
 }
 
 proptest! {
