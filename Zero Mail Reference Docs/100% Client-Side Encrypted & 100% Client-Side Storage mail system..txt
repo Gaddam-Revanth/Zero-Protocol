@@ -1,0 +1,39 @@
+I have completed the research on building a 100% Client-Side Encrypted & 100% Client-Side Storage mail system.
+
+This is a Zero-Trust, Zero-Server-Knowledge Architecture. Here is how it can be built:
+
+1. The Core Dilemma: "Mail" vs. "Instant Messaging"
+Traditional Mail: Sender sends to a Server -> Server stores it -> Recipient pulls it later.
+100% Client-Side: There is no server to store the mail while the recipient is offline.
+Solution A (Sync Mode): Sender's device queues the message and keeps trying to send it until the recipient comes online (like BitTorrent or early P2P chat).
+Solution B (Encrypted "Dead Drop"): Use a specialized standard (like IPFS or a blind relay) where encrypted blobs are stored temporarily, but only the client holds the keys and the persistent storage is purely local (download & delete from relay).
+2. Recommended Architecture
+A. Storage: 100% Local
+Technology: IndexedDB (Browser) or SQLite (Native App).
+Mechanism: All emails, attachments, and private keys live only inside the user's browser/device storage.
+Sync: If a user has multiple devices, they must sync directly between them (P2P) or manually export/import keys. There is no cloud account to "restore" from.
+B. Encryption: 100% Client-Side (End-to-End)
+Technology: Web Crypto API (Native browser standard) or LibSodium.
+Protocol:
+Identity: Public/Private key pair generated on the device (e.g., ECDH or RSA).
+Addressing: The "Email Address" is actually a hash of the Public Key (e.g., user_8x92...).
+Sending: Messages are encrypted with the Recipient's Public Key on the Sender's device before they ever touch the network. Only the Recipient's Private Key (stored only on their device) can decrypt it.
+C. Transport: Serverless / P2P
+Online Transport: WebRTC Data Channels.
+Allows direct browser-to-browser connection.
+Heavy files (attachments) go directly peer-to-peer, never touching a server.
+Offline Handling (The tricky part):
+Option 1 (True P2P): Sender's "Outbox" keeps the encrypted message. When Recipient comes online, a handshake occurs, and the message is pushed. (Standard for high-security, low-meta-data systems).
+Option 2 (Blind Relay): Use a dumb "mailbox" server (like a standard MQTT or NATS broker) or IPFS.
+Senders upload an encrypted blob to a public location addressed to the Recipient's ID.
+Recipient periodically checks that location, downloads the blob, decrypts it locally, and deletes it from the public location.
+The storage is transient; permanent storage is 100% client-side.
+3. Existing "Proof of Concept" Technologies
+GunDB (gundb.io): A decentralized, offline-first graph database that syncs between encryption peers.
+Berty / Briar: Messaging apps that use Bluetooth/WiFi transport for offline/local-only mesh communication.
+PearJS / Holepunch: Frameworks for building P2P apps with zero server infrastructure.
+Summary Architecture for Your Build
+Frontend: React/Vue PWA (Progressive Web App).
+Database: RxDB or Dexie.js (wrappers for IndexedDB).
+Network: PeerJS (WebRTC wrapper) for online sync + optional IPFS "mailbox" for offline delivery.
+Security: Web Crypto API for AES-GCM (content) and ECDH (keys).

@@ -1,0 +1,20 @@
+Atomic Mail (atomicmail.io) does not rely on a single traditional email protocol like SMTP or IMAP for its core functionality. Instead, it uses a proprietary end-to-end encryption protocol built on standard cryptographic primitives.
+
+Here is the breakdown of the protocol and architecture it uses:
+
+1. Core Encryption Protocol (Atomic Encryption)
+For communication between two Atomic Mail users, it uses a custom implementation combining:
+
+ECIES (Elliptic Curve Integrated Encryption Scheme): Used for public-key encryption. This ensures that only the intended recipient can decrypt the message.
+AES-256: Used for symmetric encryption of the actual message content, attachments, and metadata (both in transit and at rest).
+SHA-256: Used for hashing and data integrity.
+2. Key Management (Blockchain-style Identity)
+Unlike traditional email servers that hold your keys, Atomic Mail operates like a cryptocurrency wallet:
+
+BIP39 Seed Phrase: Your identity and private keys are derived from a 12-word recovery phrase (mnemonics).
+Client-Side Encryption: Private keys are generated and stored strictly on your device. They never leave your device, meaning Atomic Mail (the company) technically cannot read your emails (Zero-Knowledge Architecture).
+3. Transport & Interoperability
+TLS 1.3: All data in transit between your device and their servers is secured with the latest Transport Layer Security.
+External Email: When sending to non-Atomic users (e.g., Gmail), it typically falls back to standard SMTP over TLS, or offers a "Password Protected Message" link where the recipient decrypts the message on a browser.
+Summary
+Atomic Mail uses a decentralized-style security protocol (ECIES + AES-256 + BIP39) running over standard web transport (TLS 1.3), effectively treating email acting more like a secure message signal than a traditional SMTP email stream.

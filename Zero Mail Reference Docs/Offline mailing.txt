@@ -1,0 +1,43 @@
+To achieve "Offline Mailing" in a 100% client-side system, you need to solve two different problems:
+
+Queueing (Sender is offline): Writing emails while on a plane/subway.
+Asynchronous Delivery (Recipient is offline): Sending mail to someone who isn't online to receive it immediately.
+Here is the architecture for both:
+
+1. The "Outbox" Pattern (Sender is Offline)
+This is the easiest part. Since you use IndexedDB, your app is "Offline First" by default.
+
+How it works: When you click "Send" while offline, the app encrypts the message locally and saves it to an outbox table in IndexedDB.
+Sync: A Service Worker (background process) listens for an internet connection. The moment you reconnect, it automatically pushes the queued messages.
+2. Asynchronous Delivery (Recipient is Offline)
+In a serverless system, if the recipient is offline, you can't push via WebRTC. You need a "Dead Drop"—a place to leave the encrypted message until they return.
+
+Option A: The "Nostr" Model (Dumb Relays)
+Architecture: Use a network of "dumb" relays (websockets) that store data but can't read it.
+Workflow:
+You encrypt the mail with the Recipient's Key.
+You sign it and push it to a Relay (essentially a public bulletin board).
+The Relay stores it (blindly).
+When the Recipient typically comes online, their client queries the Relay: "Any new messages for me?"
+They download, decrypt, and (optionally) send a "delete" command to the relay.
+Pros: Very reliable, widely used standard (Nostr).
+Option B: The "IPFS" Model (Decentralized Storage)
+Architecture: Upload the encrypted file to IPFS (InterPlanetary File System).
+Workflow:
+Sender creates an encrypted file -> Uploads to IPFS -> Gets a Hash (CID).
+Sender pushes just the Hash to a "notification" channel (like a tiny PubSub topic).
+Recipient sees the Hash, pulls the file from the IPFS network.
+3. True Offline (No Internet / Apocalypse Mode)
+This uses Local Mesh Networking (Bluetooth LE or WiFi Direct).
+
+Technology: Libraries like Bridgefy or P2PKit.
+Scenario: You are at a protest or a disaster zone with no internet.
+How it works:
+You send a mail to "Alice".
+Your phone broadcasts: "I have a message for Alice."
+It passes to Bob's phone -> Carol's phone -> Dave's phone (encrypted, they can't read it).
+Finally, it reaches Alice's phone.
+This is called "Store-and-Forward" Mesh Networking.
+Recommendation
+For a robust "Gmail alternative" that respects your constraints, combine Method 1 (Outbox) with Method 2A (Nostr-style Relays). It gives the reliability of a server without the privacy invasion of one.
+
