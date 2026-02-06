@@ -25,6 +25,8 @@ hkdf = "0.12"
 cipher = "0.4"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 tokio = { version = "1.0", features = ["full"] }
+libp2p = { version = "0.53", features = ["tcp", "dns", "noise", "yamux", "gossipsub", "kad", "mdns", "macros", "tokio"] }
+futures = "0.3"
 
 [dev-dependencies]
 hex = "0.4"
