@@ -188,3 +188,50 @@ async fn test_multi_user_simulation() {
         "All sent messages should be received and decrypted"
     );
 }
+
+#[tokio::test]
+async fn test_client_side_storage_enforcement() {
+    let relay = MockRelay::new();
+    let alice = Agent::new("alice");
+    let bob = Agent::new("bob");
+
+    // 1. Bob sends email to Alice
+    // alice.public_key_bytes is ALREADY binary
+    let alice_pub_key = alice.public_key_bytes.clone();
+
+    // Simulate sending
+    bob.send_message("alice", &alice_pub_key, "Secret Data", &relay);
+
+    // 2. Verify Server (Relay) holding the data
+    {
+        let inboxes = relay.inboxes.lock().unwrap();
+        assert_eq!(
+            inboxes.get("alice").unwrap().len(),
+            1,
+            "Relay should hold message before fetch"
+        );
+    }
+
+    // 3. Alice fetches emails
+    let count = alice.check_inbox(&relay);
+    assert_eq!(count, 1);
+
+    // 4. VERIFICATION: Relay must be EMPTY now
+    {
+        let inboxes = relay.inboxes.lock().unwrap();
+        // The key might exist but the vec should be empty
+        let inbox_size = inboxes.get("alice").map(|v| v.len()).unwrap_or(0);
+        assert_eq!(
+            inbox_size, 0,
+            "Relay MUST be empty after fetch (Client-Side Storage Policy)"
+        );
+    }
+
+    // 5. Verification: Alice's Local Storage has the email
+    let stored_emails = alice.storage.get_emails_by_folder("inbox").unwrap();
+    assert_eq!(
+        stored_emails.len(),
+        1,
+        "Alice should have the email locally"
+    );
+}
