@@ -7,6 +7,38 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use tokio::io;
 
+/// Power mode for battery-aware networking
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PowerMode {
+    /// Always-on, routes messages, 10s heartbeat (Desktop, plugged in)
+    #[default]
+    FullNode,
+    /// Periodic polling, 5min heartbeat, no routing (Laptop on battery)
+    LightClient,
+    /// Minimal activity, only DHT mailbox check on-demand (App minimized)
+    Standby,
+}
+
+impl PowerMode {
+    /// Get heartbeat interval for this power mode
+    pub fn heartbeat_interval(&self) -> Duration {
+        match self {
+            PowerMode::FullNode => Duration::from_secs(10),
+            PowerMode::LightClient => Duration::from_secs(300), // 5 minutes
+            PowerMode::Standby => Duration::from_secs(600),     // 10 minutes (minimal)
+        }
+    }
+
+    /// Get mesh_n (number of peers to maintain in mesh) - 0 for leaf nodes
+    pub fn mesh_n(&self) -> usize {
+        match self {
+            PowerMode::FullNode => 6,    // Default gossipsub mesh size
+            PowerMode::LightClient => 0, // Leaf node - no routing
+            PowerMode::Standby => 0,
+        }
+    }
+}
+
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "ZeroEvent")]
 pub struct ZeroBehaviour {
@@ -107,6 +139,90 @@ pub async fn build_swarm(
     )?;
 
     // 3. Configure Kademlia (DHT)
+    let kademlia = kad::Behaviour::new(local_peer_id, kad::store::MemoryStore::new(local_peer_id));
+
+    // 4. Configure mDNS (Local Discovery)
+    let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)?;
+
+    // 5. Build Swarm
+    let behaviour = ZeroBehaviour {
+        gossipsub,
+        kademlia,
+        mdns,
+    };
+
+    let mut swarm = libp2p::Swarm::new(
+        transport,
+        behaviour,
+        local_peer_id,
+        libp2p::swarm::Config::with_tokio_executor(),
+    );
+
+    // Bootstrap Seeding
+    if let Some(seeds) = bootstrap_peers {
+        for peer in seeds {
+            swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(&peer.0, peer.1.clone());
+        }
+    }
+
+    Ok(swarm)
+}
+
+/// Build a swarm with power-aware configuration for battery optimization
+pub async fn build_swarm_with_mode(
+    local_key: libp2p::identity::Keypair,
+    bootstrap_peers: Option<Vec<(PeerId, libp2p::Multiaddr)>>,
+    mode: PowerMode,
+) -> Result<libp2p::Swarm<ZeroBehaviour>, Box<dyn std::error::Error>> {
+    let local_peer_id = PeerId::from(local_key.public());
+
+    // 1. Configure Transport (TCP + DNS + Noise + Yamux)
+    let tcp_config = tcp::Config::default().nodelay(true);
+    let tcp_transport = tcp::tokio::Transport::new(tcp_config);
+    let dns_transport = libp2p::dns::tokio::Transport::system(tcp_transport)?;
+
+    let transport = dns_transport
+        .upgrade(libp2p::core::upgrade::Version::V1)
+        .authenticate(noise::Config::new(&local_key)?)
+        .multiplex(yamux::Config::default())
+        .boxed();
+
+    // 2. Configure Gossipsub with power-aware settings
+    let message_id_fn = |message: &gossipsub::Message| {
+        let mut s = DefaultHasher::new();
+        message.data.hash(&mut s);
+        gossipsub::MessageId::from(s.finish().to_string())
+    };
+
+    // Build gossipsub config with mode-specific heartbeat
+    let mut gossipsub_config_builder = gossipsub::ConfigBuilder::default();
+    gossipsub_config_builder
+        .heartbeat_interval(mode.heartbeat_interval())
+        .validation_mode(gossipsub::ValidationMode::Strict)
+        .message_id_fn(message_id_fn);
+
+    // For LightClient/Standby: reduce mesh participation
+    if mode != PowerMode::FullNode {
+        gossipsub_config_builder
+            .mesh_n(mode.mesh_n())
+            .mesh_n_low(0)
+            .mesh_n_high(mode.mesh_n().saturating_add(2));
+    }
+
+    let gossipsub_config = gossipsub_config_builder
+        .build()
+        .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?;
+
+    let gossipsub = gossipsub::Behaviour::new(
+        gossipsub::MessageAuthenticity::Signed(local_key.clone()),
+        gossipsub_config,
+    )
+    .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?;
+
+    // 3. Configure Kademlia (DHT) - same for all modes
     let kademlia = kad::Behaviour::new(local_peer_id, kad::store::MemoryStore::new(local_peer_id));
 
     // 4. Configure mDNS (Local Discovery)
