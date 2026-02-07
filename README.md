@@ -261,3 +261,7 @@ MIT License — Free to use, modify, and distribute.
 <p align="center">
   <strong>Zero Protocol — Because email should belong to you.</strong>
 </p>
+
+<p align="center">
+  🇮🇳 <em>Made in India for the World</em> 🌍
+</p>
