@@ -2,7 +2,7 @@ use futures::StreamExt;
 use libp2p::{Multiaddr, PeerId, gossipsub, swarm::SwarmEvent};
 use std::time::Duration;
 use tokio::time::sleep;
-use zero_protocol::p2p::{ZeroBehaviourEvent, build_swarm};
+use zero_protocol::p2p::{ZeroEvent, build_swarm};
 
 async fn run_node(
     mut swarm: libp2p::Swarm<zero_protocol::p2p::ZeroBehaviour>,
@@ -45,7 +45,7 @@ async fn run_node(
             tokio::select! {
                 event = swarm.select_next_some() => {
                     match event {
-                        SwarmEvent::Behaviour(ZeroBehaviourEvent::Gossipsub(gossipsub::Event::Message { message, .. })) => {
+                        SwarmEvent::Behaviour(ZeroEvent::Gossipsub(gossipsub::Event::Message { message, .. })) => {
                             println!("Node {} Received: {:?}", local_peer_id, String::from_utf8_lossy(&message.data));
                         },
                         _ => {}

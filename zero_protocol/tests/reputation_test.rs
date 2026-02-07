@@ -2,7 +2,7 @@ use futures::StreamExt;
 use libp2p::{Multiaddr, PeerId, Swarm, gossipsub, identity, swarm::SwarmEvent};
 use std::time::Duration;
 use tokio::time::sleep;
-use zero_protocol::p2p::{ZeroBehaviour, ZeroBehaviourEvent, build_swarm};
+use zero_protocol::p2p::{ZeroBehaviour, ZeroEvent, build_swarm};
 
 // Helper: Run a node
 async fn create_node() -> (Swarm<ZeroBehaviour>, PeerId, Multiaddr) {
@@ -85,7 +85,7 @@ async fn test_spam_penalty_disconnect() {
     for _ in 0..20 {
         tokio::select! {
              event = swarm_b.select_next_some() => {
-               if let SwarmEvent::Behaviour(ZeroBehaviourEvent::Gossipsub(
+               if let SwarmEvent::Behaviour(ZeroEvent::Gossipsub(
                    gossipsub::Event::Message { .. }
                )) = event {
                    msg_received = true;

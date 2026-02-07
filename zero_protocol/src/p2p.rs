@@ -1,15 +1,43 @@
 use crate::pow::{DEFAULT_DIFFICULTY, PoWMessage};
+use libp2p::kad::{Quorum, Record};
 use libp2p::{PeerId, Transport, gossipsub, kad, mdns, noise, swarm::NetworkBehaviour, tcp, yamux};
+use sha2::{Digest, Sha256};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use tokio::io;
 
 #[derive(NetworkBehaviour)]
+#[behaviour(out_event = "ZeroEvent")]
 pub struct ZeroBehaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
     pub mdns: mdns::tokio::Behaviour,
+}
+
+#[derive(Debug)]
+pub enum ZeroEvent {
+    Gossipsub(gossipsub::Event),
+    Kademlia(kad::Event),
+    Mdns(mdns::Event),
+}
+
+impl From<gossipsub::Event> for ZeroEvent {
+    fn from(event: gossipsub::Event) -> Self {
+        ZeroEvent::Gossipsub(event)
+    }
+}
+
+impl From<kad::Event> for ZeroEvent {
+    fn from(event: kad::Event) -> Self {
+        ZeroEvent::Kademlia(event)
+    }
+}
+
+impl From<mdns::Event> for ZeroEvent {
+    fn from(event: mdns::Event) -> Self {
+        ZeroEvent::Mdns(event)
+    }
 }
 
 pub async fn build_swarm(
@@ -118,5 +146,46 @@ pub fn verify_incoming_message(data: &[u8]) -> Option<Vec<u8>> {
         Some(msg.payload)
     } else {
         None
+    }
+}
+
+pub const MAILBOX_SLOTS: u8 = 50;
+
+pub fn derive_mailbox_key(peer_id: &PeerId, slot: u8) -> libp2p::kad::RecordKey {
+    let mut hasher = Sha256::new();
+    hasher.update(peer_id.to_bytes());
+    hasher.update(b"box");
+    hasher.update(&[slot]);
+    let result = hasher.finalize();
+    libp2p::kad::RecordKey::new(&result)
+}
+
+pub fn send_offline_message(
+    swarm: &mut libp2p::Swarm<ZeroBehaviour>,
+    recipient: PeerId,
+    message: Vec<u8>,
+) -> Result<libp2p::kad::QueryId, libp2p::kad::store::Error> {
+    // Pick a random slot
+    // Note: For production, we should check if slot is empty first.
+    let slot = rand::random::<u8>() % MAILBOX_SLOTS;
+    let key = derive_mailbox_key(&recipient, slot);
+
+    let record = Record {
+        key,
+        value: message,
+        publisher: None,
+        expires: None,
+    };
+
+    swarm
+        .behaviour_mut()
+        .kademlia
+        .put_record(record, Quorum::One)
+}
+
+pub fn check_offline_inbox(swarm: &mut libp2p::Swarm<ZeroBehaviour>, local_peer_id: PeerId) {
+    for slot in 0..MAILBOX_SLOTS {
+        let key = derive_mailbox_key(&local_peer_id, slot);
+        swarm.behaviour_mut().kademlia.get_record(key);
     }
 }

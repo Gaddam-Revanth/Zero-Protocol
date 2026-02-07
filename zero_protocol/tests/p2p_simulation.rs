@@ -2,9 +2,9 @@ use futures::StreamExt;
 use libp2p::{Multiaddr, gossipsub, swarm::SwarmEvent};
 use std::time::Duration;
 use tokio::time::sleep;
-use zero_protocol::p2p::{ZeroBehaviourEvent, build_swarm}; // Need to expose event enum or use generated one
+use zero_protocol::p2p::{ZeroEvent, build_swarm}; // Need to expose event enum or use generated one
 
-// Note: network_behaviour macro generates `ZeroBehaviourEvent` automatically.
+// Note: network_behaviour macro generates `ZeroEvent` (via manual impl).
 // We need to make sure `ZeroBehaviour` fields are public (they are).
 
 #[tokio::test]
@@ -63,7 +63,7 @@ async fn test_p2p_messaging() {
                             // Connect A to B if A is ready?
                             // Easier to dial manually once we have addresses.
                         },
-                         SwarmEvent::Behaviour(ZeroBehaviourEvent::Gossipsub(gossipsub::Event::Message { message, .. })) => {
+                         SwarmEvent::Behaviour(ZeroEvent::Gossipsub(gossipsub::Event::Message { message, .. })) => {
                             println!("Node B Received: {:?}", String::from_utf8_lossy(&message.data));
                             messages_received += 1;
                             if messages_received >= 1 {
