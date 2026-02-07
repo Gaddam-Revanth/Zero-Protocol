@@ -1,3 +1,4 @@
+use crate::pow::{DEFAULT_DIFFICULTY, PoWMessage};
 use libp2p::{PeerId, Transport, gossipsub, kad, mdns, noise, swarm::NetworkBehaviour, tcp, yamux};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -13,17 +14,22 @@ pub struct ZeroBehaviour {
 
 pub async fn build_swarm(
     local_key: libp2p::identity::Keypair,
+    bootstrap_peers: Option<Vec<(PeerId, libp2p::Multiaddr)>>,
 ) -> Result<libp2p::Swarm<ZeroBehaviour>, Box<dyn std::error::Error>> {
     let local_peer_id = PeerId::from(local_key.public());
 
-    // 1. Configure Transport (TCP + Noise + Yamux)
-    let tcp_transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true))
+    // 1. Configure Transport (TCP + DNS + Noise + Yamux)
+    let tcp_config = tcp::Config::default().nodelay(true);
+    let tcp_transport = tcp::tokio::Transport::new(tcp_config);
+    let dns_transport = libp2p::dns::tokio::Transport::system(tcp_transport)?;
+
+    let transport = dns_transport
         .upgrade(libp2p::core::upgrade::Version::V1)
         .authenticate(noise::Config::new(&local_key)?)
         .multiplex(yamux::Config::default())
         .boxed();
 
-    // 2. Configure Gossipsub with Reputation System (Peer Scoring)
+    // 2. Configure Gossipsub with Reputation System (Peer Scoring) & PoW
     let message_id_fn = |message: &gossipsub::Message| {
         let mut s = DefaultHasher::new();
         message.data.hash(&mut s);
@@ -70,7 +76,7 @@ pub async fn build_swarm(
             accept_px_threshold: 10.0,
             opportunistic_graft_threshold: 20.0,
         },
-    );
+    )?;
 
     // 3. Configure Kademlia (DHT)
     let kademlia = kad::Behaviour::new(local_peer_id, kad::store::MemoryStore::new(local_peer_id));
@@ -85,12 +91,32 @@ pub async fn build_swarm(
         mdns,
     };
 
-    let swarm = libp2p::Swarm::new(
-        tcp_transport,
+    let mut swarm = libp2p::Swarm::new(
+        transport,
         behaviour,
         local_peer_id,
         libp2p::swarm::Config::with_tokio_executor(),
     );
 
+    // Bootstrap Seeding
+    if let Some(seeds) = bootstrap_peers {
+        for peer in seeds {
+            swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(&peer.0, peer.1.clone());
+        }
+    }
+
     Ok(swarm)
+}
+
+/// Helper to verify incoming messages for PoW
+pub fn verify_incoming_message(data: &[u8]) -> Option<Vec<u8>> {
+    let msg: PoWMessage = serde_json::from_slice(data).ok()?;
+    if msg.verify(DEFAULT_DIFFICULTY) {
+        Some(msg.payload)
+    } else {
+        None
+    }
 }

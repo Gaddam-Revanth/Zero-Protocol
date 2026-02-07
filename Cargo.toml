@@ -1,6 +1,5 @@
 [workspace]
 members = [
     "zero_protocol",
-    "zero_desktop/src-tauri",
 ]
 resolver = "2"

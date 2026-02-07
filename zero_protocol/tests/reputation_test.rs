@@ -1,8 +1,5 @@
 use futures::StreamExt;
-use libp2p::{
-    Multiaddr, PeerId, Swarm, gossipsub, identity,
-    swarm::{SwarmBuilder, SwarmEvent},
-};
+use libp2p::{Multiaddr, PeerId, Swarm, gossipsub, identity, swarm::SwarmEvent};
 use std::time::Duration;
 use tokio::time::sleep;
 use zero_protocol::p2p::{ZeroBehaviour, ZeroBehaviourEvent, build_swarm};
@@ -11,7 +8,7 @@ use zero_protocol::p2p::{ZeroBehaviour, ZeroBehaviourEvent, build_swarm};
 async fn create_node() -> (Swarm<ZeroBehaviour>, PeerId, Multiaddr) {
     let keypair = identity::Keypair::generate_ed25519();
     let peer_id = PeerId::from(keypair.public());
-    let mut swarm = build_swarm(keypair).await.unwrap();
+    let mut swarm = build_swarm(keypair, None).await.unwrap();
 
     // Listen on a random localhost port
     swarm
@@ -44,7 +41,13 @@ async fn test_spam_penalty_disconnect() {
     let mut b_connected_a = false;
 
     // Drive swarms until connected
+    // Use a timeout to prevent infinite hanging if connection fails
+    let start = std::time::Instant::now();
     loop {
+        if start.elapsed() > Duration::from_secs(5) {
+            panic!("Timeout waiting for connection");
+        }
+
         tokio::select! {
             event = swarm_a.select_next_some() => {
                 if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event {
@@ -56,7 +59,6 @@ async fn test_spam_penalty_disconnect() {
                     if peer_id == peer_a { b_connected_a = true; }
                 }
             }
-            default => break, // Timeout protection in real run, mostly just proceed
         }
         if a_connected_b && b_connected_a {
             break;

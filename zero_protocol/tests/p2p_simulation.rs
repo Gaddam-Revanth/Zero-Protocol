@@ -11,11 +11,11 @@ use zero_protocol::p2p::{ZeroBehaviourEvent, build_swarm}; // Need to expose eve
 async fn test_p2p_messaging() {
     // 1. Create Node A
     let key_a = libp2p::identity::Keypair::generate_ed25519();
-    let mut swarm_a = build_swarm(key_a).await.unwrap();
+    let mut swarm_a = build_swarm(key_a, None).await.unwrap();
 
     // 2. Create Node B
     let key_b = libp2p::identity::Keypair::generate_ed25519();
-    let mut swarm_b = build_swarm(key_b).await.unwrap();
+    let mut swarm_b = build_swarm(key_b, None).await.unwrap();
 
     // 3. Listen on localhost
     swarm_a

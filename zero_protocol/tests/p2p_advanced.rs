@@ -66,21 +66,21 @@ async fn run_node(
 #[tokio::test]
 async fn test_multi_hop_gossip() {
     // 1. Setup Node A
-    let swarm_a = build_swarm(libp2p::identity::Keypair::generate_ed25519())
+    let swarm_a = build_swarm(libp2p::identity::Keypair::generate_ed25519(), None)
         .await
         .unwrap();
     let (_id_a, addr_a, handle_a) = run_node(swarm_a, None, true).await;
     println!("Node A running at {}", addr_a);
 
     // 2. Setup Node B (Connects to A)
-    let swarm_b = build_swarm(libp2p::identity::Keypair::generate_ed25519())
+    let swarm_b = build_swarm(libp2p::identity::Keypair::generate_ed25519(), None)
         .await
         .unwrap();
     let (_id_b, addr_b, handle_b) = run_node(swarm_b, Some(addr_a.clone()), true).await;
     println!("Node B running at {}", addr_b);
 
     // 3. Setup Node C (Connects to B)
-    let swarm_c = build_swarm(libp2p::identity::Keypair::generate_ed25519())
+    let swarm_c = build_swarm(libp2p::identity::Keypair::generate_ed25519(), None)
         .await
         .unwrap();
     let (_id_c, addr_c, handle_c) = run_node(swarm_c, Some(addr_b.clone()), true).await;
