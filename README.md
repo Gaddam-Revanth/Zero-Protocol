@@ -43,6 +43,11 @@ Zero Protocol:      You ←→ P2P Mesh ←→ Recipient
 | Zero-Knowledge | ✅ | ❌ | ⚠️ |
 | No Server Access | ✅ | ❌ | ❌ |
 
+### 🆔 Decentralized Identity
+- **Public Key as Address** — No central registry
+- **Aliases** — Map "alice@zero" to public key via DHT
+- **ENS Support** — Ready for blockchain identity integration
+
 ### 🌐 True P2P Architecture
 - **Gossipsub Mesh** — Real-time message propagation
 - **Kademlia DHT** — Decentralized peer discovery
@@ -94,6 +99,10 @@ let mnemonic = crypto::generate_mnemonic()?;
 // Derive keys from mnemonic
 let seed = crypto::derive_seed_from_mnemonic(&mnemonic, "")?;
 let signing_key = crypto::derive_signing_key(&seed);
+
+// Create Zero Address (Public Key)
+let address = identity::ZeroAddress::from_public_key(signing_key.public);
+println!("Your Address: {}", address);
 ```
 
 ### 2. Sending a Message
@@ -165,6 +174,7 @@ let ciphertext = crypto::encrypt_aes_256_cbc(b"Hello!", &key)?;
 | Feature | Zero Protocol | Bitmessage | Eppie | ProtonMail |
 |---------|--------------|------------|-------|------------|
 | Serverless | ✅ | ✅ | ⏳ WIP | ❌ |
+| Identity | ✅ PubKey + Alias | ✅ PubKey | ✅ PubKey | ❌ Email |
 | Forward Secrecy | ✅ | ❌ | ❌ | ❌ |
 | Real-time | ✅ | ❌ | ⏳ WIP | ✅ |
 | Spam Prevention | ✅ PoW+Rep | ✅ PoW | ❌ | ✅ |
