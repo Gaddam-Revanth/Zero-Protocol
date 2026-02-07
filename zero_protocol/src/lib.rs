@@ -1,4 +1,5 @@
 pub mod crypto;
+pub mod identity;
 pub mod models;
 pub mod network;
 pub mod p2p;

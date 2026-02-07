@@ -1,6 +1,6 @@
-use crate::pow::{DEFAULT_DIFFICULTY, PoWMessage};
+use crate::pow::{PoWMessage, DEFAULT_DIFFICULTY};
 use libp2p::kad::{Quorum, Record};
-use libp2p::{PeerId, Transport, gossipsub, kad, mdns, noise, swarm::NetworkBehaviour, tcp, yamux};
+use libp2p::{gossipsub, kad, mdns, noise, swarm::NetworkBehaviour, tcp, yamux, PeerId, Transport};
 use sha2::{Digest, Sha256};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -284,4 +284,21 @@ pub fn check_offline_inbox(swarm: &mut libp2p::Swarm<ZeroBehaviour>, local_peer_
         let key = derive_mailbox_key(&local_peer_id, slot);
         swarm.behaviour_mut().kademlia.get_record(key);
     }
+}
+
+/// Register an alias for the local node
+pub fn register_alias(
+    swarm: &mut libp2p::Swarm<ZeroBehaviour>,
+    alias: &str,
+    public_key: [u8; 32],
+) -> Result<libp2p::kad::QueryId, crate::identity::IdentityError> {
+    crate::identity::register_alias(swarm, alias, &public_key)
+}
+
+/// Resolve an alias to a public key
+pub fn resolve_alias(
+    swarm: &mut libp2p::Swarm<ZeroBehaviour>,
+    alias: &str,
+) -> libp2p::kad::QueryId {
+    crate::identity::resolve_alias(swarm, alias)
 }
