@@ -10,30 +10,25 @@ use tokio::io;
 /// Power mode for battery-aware networking
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PowerMode {
-    /// Always-on, routes messages, 10s heartbeat (Desktop, plugged in)
     #[default]
     FullNode,
-    /// Periodic polling, 5min heartbeat, no routing (Laptop on battery)
     LightClient,
-    /// Minimal activity, only DHT mailbox check on-demand (App minimized)
     Standby,
 }
 
 impl PowerMode {
-    /// Get heartbeat interval for this power mode
     pub fn heartbeat_interval(&self) -> Duration {
         match self {
             PowerMode::FullNode => Duration::from_secs(10),
-            PowerMode::LightClient => Duration::from_secs(300), // 5 minutes
-            PowerMode::Standby => Duration::from_secs(600),     // 10 minutes (minimal)
+            PowerMode::LightClient => Duration::from_secs(300),
+            PowerMode::Standby => Duration::from_secs(600),
         }
     }
 
-    /// Get mesh_n (number of peers to maintain in mesh) - 0 for leaf nodes
     pub fn mesh_n(&self) -> usize {
         match self {
-            PowerMode::FullNode => 6,    // Default gossipsub mesh size
-            PowerMode::LightClient => 0, // Leaf node - no routing
+            PowerMode::FullNode => 6,
+            PowerMode::LightClient => 0,
             PowerMode::Standby => 0,
         }
     }
@@ -72,13 +67,13 @@ impl From<mdns::Event> for ZeroEvent {
     }
 }
 
+/// Build a P2P swarm with default settings
 pub async fn build_swarm(
     local_key: libp2p::identity::Keypair,
     bootstrap_peers: Option<Vec<(PeerId, libp2p::Multiaddr)>>,
 ) -> Result<libp2p::Swarm<ZeroBehaviour>, Box<dyn std::error::Error>> {
     let local_peer_id = PeerId::from(local_key.public());
 
-    // 1. Configure Transport (TCP + DNS + Noise + Yamux)
     let tcp_config = tcp::Config::default().nodelay(true);
     let tcp_transport = tcp::tokio::Transport::new(tcp_config);
     let dns_transport = libp2p::dns::tokio::Transport::system(tcp_transport)?;
@@ -89,19 +84,17 @@ pub async fn build_swarm(
         .multiplex(yamux::Config::default())
         .boxed();
 
-    // 2. Configure Gossipsub with Reputation System (Peer Scoring) & PoW
     let message_id_fn = |message: &gossipsub::Message| {
         let mut s = DefaultHasher::new();
         message.data.hash(&mut s);
         gossipsub::MessageId::from(s.finish().to_string())
     };
 
-    // Reputation Logic (Mutable Init to avoid version mismatch)
     let mut topic_score_params = gossipsub::TopicScoreParams::default();
     topic_score_params.topic_weight = 1.0;
     topic_score_params.time_in_mesh_weight = 0.01;
     topic_score_params.time_in_mesh_quantum = Duration::from_secs(1);
-    topic_score_params.invalid_message_deliveries_weight = -100.0; // INSTANT BAN
+    topic_score_params.invalid_message_deliveries_weight = -100.0;
     topic_score_params.invalid_message_deliveries_decay = 0.99;
 
     let mut peer_score_params = gossipsub::PeerScoreParams::default();
@@ -138,13 +131,9 @@ pub async fn build_swarm(
         },
     )?;
 
-    // 3. Configure Kademlia (DHT)
     let kademlia = kad::Behaviour::new(local_peer_id, kad::store::MemoryStore::new(local_peer_id));
-
-    // 4. Configure mDNS (Local Discovery)
     let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)?;
 
-    // 5. Build Swarm
     let behaviour = ZeroBehaviour {
         gossipsub,
         kademlia,
@@ -158,7 +147,6 @@ pub async fn build_swarm(
         libp2p::swarm::Config::with_tokio_executor(),
     );
 
-    // Bootstrap Seeding
     if let Some(seeds) = bootstrap_peers {
         for peer in seeds {
             swarm
@@ -171,7 +159,7 @@ pub async fn build_swarm(
     Ok(swarm)
 }
 
-/// Build a swarm with power-aware configuration for battery optimization
+/// Build a swarm with power-aware configuration
 pub async fn build_swarm_with_mode(
     local_key: libp2p::identity::Keypair,
     bootstrap_peers: Option<Vec<(PeerId, libp2p::Multiaddr)>>,
@@ -179,7 +167,6 @@ pub async fn build_swarm_with_mode(
 ) -> Result<libp2p::Swarm<ZeroBehaviour>, Box<dyn std::error::Error>> {
     let local_peer_id = PeerId::from(local_key.public());
 
-    // 1. Configure Transport (TCP + DNS + Noise + Yamux)
     let tcp_config = tcp::Config::default().nodelay(true);
     let tcp_transport = tcp::tokio::Transport::new(tcp_config);
     let dns_transport = libp2p::dns::tokio::Transport::system(tcp_transport)?;
@@ -190,21 +177,18 @@ pub async fn build_swarm_with_mode(
         .multiplex(yamux::Config::default())
         .boxed();
 
-    // 2. Configure Gossipsub with power-aware settings
     let message_id_fn = |message: &gossipsub::Message| {
         let mut s = DefaultHasher::new();
         message.data.hash(&mut s);
         gossipsub::MessageId::from(s.finish().to_string())
     };
 
-    // Build gossipsub config with mode-specific heartbeat
     let mut gossipsub_config_builder = gossipsub::ConfigBuilder::default();
     gossipsub_config_builder
         .heartbeat_interval(mode.heartbeat_interval())
         .validation_mode(gossipsub::ValidationMode::Strict)
         .message_id_fn(message_id_fn);
 
-    // For LightClient/Standby: reduce mesh participation
     if mode != PowerMode::FullNode {
         gossipsub_config_builder
             .mesh_n(mode.mesh_n())
@@ -222,13 +206,9 @@ pub async fn build_swarm_with_mode(
     )
     .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?;
 
-    // 3. Configure Kademlia (DHT) - same for all modes
     let kademlia = kad::Behaviour::new(local_peer_id, kad::store::MemoryStore::new(local_peer_id));
-
-    // 4. Configure mDNS (Local Discovery)
     let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)?;
 
-    // 5. Build Swarm
     let behaviour = ZeroBehaviour {
         gossipsub,
         kademlia,
@@ -242,7 +222,6 @@ pub async fn build_swarm_with_mode(
         libp2p::swarm::Config::with_tokio_executor(),
     );
 
-    // Bootstrap Seeding
     if let Some(seeds) = bootstrap_peers {
         for peer in seeds {
             swarm
@@ -255,7 +234,7 @@ pub async fn build_swarm_with_mode(
     Ok(swarm)
 }
 
-/// Helper to verify incoming messages for PoW
+/// Verify incoming message has valid PoW
 pub fn verify_incoming_message(data: &[u8]) -> Option<Vec<u8>> {
     let msg: PoWMessage = serde_json::from_slice(data).ok()?;
     if msg.verify(DEFAULT_DIFFICULTY) {
@@ -267,6 +246,7 @@ pub fn verify_incoming_message(data: &[u8]) -> Option<Vec<u8>> {
 
 pub const MAILBOX_SLOTS: u8 = 50;
 
+/// Derive DHT key for offline mailbox slot
 pub fn derive_mailbox_key(peer_id: &PeerId, slot: u8) -> libp2p::kad::RecordKey {
     let mut hasher = Sha256::new();
     hasher.update(peer_id.to_bytes());
@@ -276,13 +256,12 @@ pub fn derive_mailbox_key(peer_id: &PeerId, slot: u8) -> libp2p::kad::RecordKey 
     libp2p::kad::RecordKey::new(&result)
 }
 
+/// Send message to recipient's DHT mailbox
 pub fn send_offline_message(
     swarm: &mut libp2p::Swarm<ZeroBehaviour>,
     recipient: PeerId,
     message: Vec<u8>,
 ) -> Result<libp2p::kad::QueryId, libp2p::kad::store::Error> {
-    // Pick a random slot
-    // Note: For production, we should check if slot is empty first.
     let slot = rand::random::<u8>() % MAILBOX_SLOTS;
     let key = derive_mailbox_key(&recipient, slot);
 
@@ -299,6 +278,7 @@ pub fn send_offline_message(
         .put_record(record, Quorum::One)
 }
 
+/// Check all mailbox slots for incoming messages
 pub fn check_offline_inbox(swarm: &mut libp2p::Swarm<ZeroBehaviour>, local_peer_id: PeerId) {
     for slot in 0..MAILBOX_SLOTS {
         let key = derive_mailbox_key(&local_peer_id, slot);

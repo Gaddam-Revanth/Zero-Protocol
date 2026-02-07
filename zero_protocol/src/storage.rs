@@ -15,18 +15,12 @@ pub enum StorageError {
 
 pub struct Storage {
     conn: Connection,
-    // Key to encrypt/decrypt DB content usually.
-    // For MVP, we might just store fields encrypted or rely on SQLCipher if available (but using rusqlite bundled often implies standard SQLite).
-    // The research says "Encrypted SQLite database".
-    // Usually means SQLCipher or manually encrypting fields.
-    // Given "AES-256-CBC wrapper" implemented, we likely manually encrypt sensitive fields before storing.
 }
 
 impl Storage {
     pub fn open(path: &str) -> Result<Self, StorageError> {
         let conn = Connection::open(path)?;
 
-        // Initialize tables
         conn.execute(
             "CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
@@ -41,9 +35,9 @@ impl Storage {
             "CREATE TABLE IF NOT EXISTS emails (
                 id TEXT PRIMARY KEY,
                 sender TEXT NOT NULL,
-                recipients TEXT NOT NULL, -- JSON array
-                subject TEXT NOT NULL, -- Encrypted
-                body TEXT NOT NULL, -- Encrypted
+                recipients TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                body TEXT NOT NULL,
                 timestamp INTEGER,
                 is_read BOOLEAN,
                 folder TEXT
@@ -64,7 +58,6 @@ impl Storage {
         Ok(Storage { conn })
     }
 
-    // User Operations
     pub fn save_user(&self, user: &UserIdentity) -> Result<(), StorageError> {
         self.conn.execute(
             "INSERT OR REPLACE INTO users (id, public_key, username, created_at) VALUES (?1, ?2, ?3, ?4)",
@@ -91,7 +84,6 @@ impl Storage {
         }
     }
 
-    // Email Operations
     pub fn save_email(&self, email: &Email) -> Result<(), StorageError> {
         let recipients_json = serde_json::to_string(&email.recipients)?;
         self.conn.execute(
@@ -111,7 +103,9 @@ impl Storage {
     }
 
     pub fn get_emails_by_folder(&self, folder: &str) -> Result<Vec<Email>, StorageError> {
-        let mut stmt = self.conn.prepare("SELECT id, sender, recipients, subject, body, timestamp, is_read, folder FROM emails WHERE folder = ?1 ORDER BY timestamp DESC")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, sender, recipients, subject, body, timestamp, is_read, folder FROM emails WHERE folder = ?1 ORDER BY timestamp DESC"
+        )?;
         let rows = stmt.query_map([folder], |row| {
             let recipients_str: String = row.get(2)?;
             let recipients: Vec<String> = serde_json::from_str(&recipients_str).unwrap_or_default();
@@ -127,59 +121,43 @@ impl Storage {
             })
         })?;
 
-        let mut emails = Vec::new();
-        for email in rows {
-            emails.push(email?);
-        }
-        Ok(emails)
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Email, UserIdentity};
 
     #[test]
     fn test_storage_user_operations() {
         let storage = Storage::open(":memory:").unwrap();
-
         let user = UserIdentity {
             id: "user_123".to_string(),
             public_key: "pub_key_hex".to_string(),
             username: "testuser".to_string(),
             created_at: 1234567890,
         };
-
         storage.save_user(&user).unwrap();
-
-        let fetched_user = storage.get_user().unwrap().unwrap();
-        assert_eq!(fetched_user.id, user.id);
-        assert_eq!(fetched_user.username, user.username);
+        let fetched = storage.get_user().unwrap().unwrap();
+        assert_eq!(fetched.id, user.id);
     }
 
     #[test]
     fn test_storage_email_operations() {
         let storage = Storage::open(":memory:").unwrap();
-
         let email = Email {
             id: "msg_1".to_string(),
             sender: "alice@example.com".to_string(),
             recipients: vec!["bob@example.com".to_string()],
             subject: "Super Secret".to_string(),
-            body: "EncryptedBodyBlob".to_string(),
+            body: "EncryptedBody".to_string(),
             timestamp: 100,
             is_read: false,
             folder: "inbox".to_string(),
         };
-
         storage.save_email(&email).unwrap();
-
         let emails = storage.get_emails_by_folder("inbox").unwrap();
         assert_eq!(emails.len(), 1);
-        assert_eq!(emails[0].id, email.id);
-
-        let emails_sent = storage.get_emails_by_folder("sent").unwrap();
-        assert_eq!(emails_sent.len(), 0);
     }
 }

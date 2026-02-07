@@ -1,14 +1,14 @@
-use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::Pkcs7}; // Explicit imports + generic
+use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
 use aes_gcm::{
-    Aes256Gcm,             // Removed Nonce if not used explicitly as type (used via into())
-    aead::{Aead, KeyInit}, // Removed Payload (unused)
+    Aes256Gcm,
+    aead::{Aead, KeyInit},
 };
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use bip39::{Language, Mnemonic, MnemonicType, Seed};
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey}; // Added Signature
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
 use k256::{PublicKey, SecretKey, ecdh::EphemeralSecret, elliptic_curve::sec1::ToEncodedPoint};
 use pbkdf2::pbkdf2_hmac;
@@ -41,13 +41,13 @@ pub enum CryptoError {
     InvalidSignature,
 }
 
-/// Generates a new 12-word BIP39 mnemonic.
+/// Generate a 12-word BIP39 mnemonic
 pub fn generate_mnemonic() -> Result<String, CryptoError> {
     let mnemonic = Mnemonic::new(MnemonicType::Words12, Language::English);
     Ok(mnemonic.phrase().to_string())
 }
 
-/// Derives a 32-byte seed from a mnemonic (and optional passphrase).
+/// Derive 64-byte seed from mnemonic
 pub fn derive_seed_from_mnemonic(phrase: &str, passphrase: &str) -> Result<Vec<u8>, CryptoError> {
     let mnemonic = Mnemonic::from_phrase(phrase, Language::English)
         .map_err(|_| CryptoError::InvalidMnemonic)?;
@@ -55,7 +55,7 @@ pub fn derive_seed_from_mnemonic(phrase: &str, passphrase: &str) -> Result<Vec<u
     Ok(seed.as_bytes().to_vec())
 }
 
-/// Derives an Ed25519 signing key from a seed.
+/// Derive Ed25519 signing key from seed
 pub fn derive_signing_key(seed: &[u8]) -> SigningKey {
     let mut key_bytes = [0u8; 32];
     if seed.len() >= 32 {
@@ -69,13 +69,12 @@ pub fn derive_signing_key(seed: &[u8]) -> SigningKey {
     SigningKey::from_bytes(&key_bytes)
 }
 
-/// Signs a message using Ed25519.
+/// Sign data with Ed25519
 pub fn sign_data(key: &SigningKey, data: &[u8]) -> Vec<u8> {
-    let signature = key.sign(data);
-    signature.to_vec()
+    key.sign(data).to_vec()
 }
 
-/// Verifies a signature using Ed25519.
+/// Verify Ed25519 signature
 pub fn verify_signature(
     public_key_bytes: &[u8],
     data: &[u8],
@@ -99,7 +98,7 @@ pub fn verify_signature(
         .map_err(|_| CryptoError::SignatureVerificationFailed)
 }
 
-/// AES-256-CBC Encryption
+/// AES-256-CBC encryption
 pub fn encrypt_aes_256_cbc(data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoError> {
     if key.len() != 32 {
         return Err(CryptoError::EncryptionError);
@@ -108,13 +107,8 @@ pub fn encrypt_aes_256_cbc(data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoErr
     OsRng.fill_bytes(&mut iv);
 
     let encryptor = Aes256CbcEnc::new(key.into(), &iv.into());
-
-    // Manual buffer management for padding
     let len = data.len();
-    let block_size = 16;
-    // Calculate required size: length + padding. Pkcs7 adds 1 to block_size bytes.
-    // Worst case: len + block_size.
-    let buffer_len = len + block_size;
+    let buffer_len = len + 16;
     let mut buffer = vec![0u8; buffer_len];
     buffer[..len].copy_from_slice(data);
 
@@ -124,19 +118,17 @@ pub fn encrypt_aes_256_cbc(data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoErr
 
     let mut result = Vec::with_capacity(iv.len() + ciphertext.len());
     result.extend_from_slice(&iv);
-    result.extend_from_slice(&ciphertext);
+    result.extend_from_slice(ciphertext);
     Ok(result)
 }
 
-/// AES-256-CBC Decryption
+/// AES-256-CBC decryption
 pub fn decrypt_aes_256_cbc(encrypted_data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoError> {
     if key.len() != 32 || encrypted_data.len() < 16 {
         return Err(CryptoError::DecryptionError);
     }
     let (iv, ciphertext) = encrypted_data.split_at(16);
     let decryptor = Aes256CbcDec::new(key.into(), iv.into());
-
-    // Decrypt in-place requires a buffer.
     let mut buffer = ciphertext.to_vec();
 
     let plaintext = decryptor
@@ -146,6 +138,7 @@ pub fn decrypt_aes_256_cbc(encrypted_data: &[u8], key: &[u8]) -> Result<Vec<u8>,
     Ok(plaintext.to_vec())
 }
 
+/// Hash password with Argon2
 pub fn hash_password(password: &str) -> Result<String, CryptoError> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
@@ -155,6 +148,7 @@ pub fn hash_password(password: &str) -> Result<String, CryptoError> {
     Ok(password_hash.to_string())
 }
 
+/// Verify password against hash
 pub fn verify_password(password: &str, hash: &str) -> Result<bool, CryptoError> {
     let parsed_hash =
         PasswordHash::new(hash).map_err(|e| CryptoError::PasswordHashError(e.to_string()))?;
@@ -163,20 +157,20 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, CryptoError> 
         .is_ok())
 }
 
+/// Derive key using PBKDF2
 pub fn derive_key_pbkdf2(password: &str, salt: &[u8]) -> [u8; 32] {
     let mut key = [0u8; 32];
     pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, 600_000, &mut key);
     key
 }
 
-/// ECIES Encryption (Pure Rust Implementation)
+/// ECIES encryption
 pub fn encrypt_ecies(recipient_pub_bytes: &[u8], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let recipient_pub =
         PublicKey::from_sec1_bytes(recipient_pub_bytes).map_err(|_| CryptoError::InvalidKey)?;
 
     let ephemeral_secret = EphemeralSecret::random(&mut OsRng);
     let ephemeral_pub = PublicKey::from(&ephemeral_secret);
-
     let shared_secret = ephemeral_secret.diffie_hellman(&recipient_pub);
 
     let hkdf = Hkdf::<Sha256>::new(None, shared_secret.raw_secret_bytes());
@@ -197,10 +191,10 @@ pub fn encrypt_ecies(recipient_pub_bytes: &[u8], data: &[u8]) -> Result<Vec<u8>,
     result.extend_from_slice(ephemeral_pub_bytes.as_bytes());
     result.extend_from_slice(&nonce);
     result.extend_from_slice(&encrypted);
-
     Ok(result)
 }
 
+/// ECIES decryption
 pub fn decrypt_ecies(recipient_secret_bytes: &[u8], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
     if data.len() < 33 + 12 {
         return Err(CryptoError::DecryptionError);
@@ -225,11 +219,9 @@ pub fn decrypt_ecies(recipient_secret_bytes: &[u8], data: &[u8]) -> Result<Vec<u
         .map_err(|_| CryptoError::DecryptionError)?;
 
     let cipher = Aes256Gcm::new(&key.into());
-    let decrypted = cipher
+    cipher
         .decrypt(nonce.into(), ciphertext)
-        .map_err(|_| CryptoError::DecryptionError)?;
-
-    Ok(decrypted)
+        .map_err(|_| CryptoError::DecryptionError)
 }
 
 #[cfg(test)]
@@ -240,27 +232,23 @@ mod tests {
     fn test_mnemonic_generation_and_seed_derivation() {
         let mnemonic = generate_mnemonic().unwrap();
         assert_eq!(mnemonic.split_whitespace().count(), 12);
-
         let seed = derive_seed_from_mnemonic(&mnemonic, "").unwrap();
-        assert_eq!(seed.len(), 64); // BIP39 seed is 64 bytes (512 bits)
+        assert_eq!(seed.len(), 64);
     }
 
     #[test]
     fn test_signing_key_derivation() {
         let seed = [0u8; 32];
         let key = derive_signing_key(&seed);
-        // Just checking it runs without panic and returns a key
         assert!(key.to_bytes().len() == 32);
     }
 
     #[test]
     fn test_aes_encryption_decryption() {
-        let key = [42u8; 32]; // 32 bytes for AES-256
+        let key = [42u8; 32];
         let data = b"Hello Zero Protocol!";
-
         let encrypted = encrypt_aes_256_cbc(data, &key).unwrap();
         assert_ne!(data.to_vec(), encrypted);
-
         let decrypted = decrypt_aes_256_cbc(&encrypted, &key).unwrap();
         assert_eq!(data.to_vec(), decrypted);
     }
@@ -269,7 +257,6 @@ mod tests {
     fn test_password_hashing() {
         let password = "super_secure_password";
         let hash = hash_password(password).unwrap();
-
         assert!(verify_password(password, &hash).unwrap());
         assert!(!verify_password("wrong_password", &hash).unwrap());
     }
@@ -278,13 +265,10 @@ mod tests {
     fn test_ecies_encryption_decryption() {
         let recipient_secret = SecretKey::random(&mut OsRng);
         let recipient_pub = recipient_secret.public_key();
-        let recipient_pub_bytes = recipient_pub.to_sec1_bytes(); // Compressed
-
-        let data = b"Secret Message for JMAP";
-
+        let recipient_pub_bytes = recipient_pub.to_sec1_bytes();
+        let data = b"Secret Message";
         let encrypted = encrypt_ecies(&recipient_pub_bytes, data).unwrap();
         assert_ne!(data.to_vec(), encrypted);
-
         let decrypted = decrypt_ecies(&recipient_secret.to_bytes(), &encrypted).unwrap();
         assert_eq!(data.to_vec(), decrypted);
     }
@@ -294,12 +278,9 @@ mod tests {
         let seed = [1u8; 32];
         let signing_key = derive_signing_key(&seed);
         let verifying_key = signing_key.verifying_key();
-
         let data = b"Sign this important email";
         let signature = sign_data(&signing_key, data);
-
         assert!(verify_signature(verifying_key.as_bytes(), data, &signature).is_ok());
-
         let modified_data = b"Tampered data";
         assert!(verify_signature(verifying_key.as_bytes(), modified_data, &signature).is_err());
     }
